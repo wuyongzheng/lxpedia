@@ -39,3 +39,24 @@ void mcs_cat (struct mcs_struct *dst, char *src, int src_len)
 	dst->len += src_len;
 	dst->ptr[dst->len] = '\0';
 }
+
+void mcs_free (struct mcs_struct *mcs)
+{
+	if (mcs == NULL)
+		return;
+	free(mcs->ptr);
+	free(mcs);
+}
+
+uint32_t loki_hash_title (char *title, int length)
+{
+	uint32_t hashval = 0;
+	if (length < 0) {
+		for (; *title; title ++)
+			hashval = hashval * 31 + *(unsigned char *)title;
+	} else {
+		for (; length > 0; length --, title ++)
+			hashval = hashval * 31 + *(unsigned char *)title;
+	}
+	return hashval;
+}

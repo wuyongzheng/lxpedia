@@ -2,6 +2,6 @@ CC=gcc
 CFLAGS=-Wall -g
 LDFLAGS=-lz
 
-all: loki-makedb
+all: lxp-makedb
 
-loki-makedb: loki-makedb.o util.o
+lxp-makedb: lxp-makedb.o lxp-util.o

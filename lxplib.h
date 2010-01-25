@@ -1,5 +1,5 @@
-#ifndef LOKI_H
-#define LOKI_H
+#ifndef LXPLIB_H
+#define LXPLIB_H
 
 #include <stdint.h>
 
@@ -18,7 +18,7 @@ struct mcs_struct {
 	int cap;
 };
 
-struct loki_sb {
+struct lxp_sb {
 	uint8_t magic[8];
 	char lang[8]; /* e.g. en, zh. NULL padded. */
 	uint32_t file_num;
@@ -31,14 +31,14 @@ struct loki_sb {
 	uint32_t min_file_size;
 } PACK_STRUCT ;
 
-struct loki_block {
+struct lxp_block {
 	uint32_t file_num;
 	uint32_t file_offset;
 	uint32_t size_plain;
 	uint32_t size_zip;
 } PACK_STRUCT ;
 
-struct loki_page_entry {
+struct lxp_page_entry {
 	uint32_t title_hash;
 	uint32_t title_offset;
 	uint32_t block_num; /* if it's 0xffffffff, it's a redirect */
@@ -51,6 +51,6 @@ void mcs_expand (struct mcs_struct *mcs, int newsize);
 void mcs_cat (struct mcs_struct *dst, char *src, int src_len);
 void mcs_free (struct mcs_struct *mcs);
 
-uint32_t loki_hash_title (char *title, int length);
+uint32_t lxp_hash_title (char *title, int length);
 
 #endif

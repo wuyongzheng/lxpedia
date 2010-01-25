@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include "loki.h"
+#include "lxplib.h"
 
 struct mcs_struct *mcs_create (int initsize)
 {
@@ -48,7 +48,7 @@ void mcs_free (struct mcs_struct *mcs)
 	free(mcs);
 }
 
-uint32_t loki_hash_title (char *title, int length)
+uint32_t lxp_hash_title (char *title, int length)
 {
 	uint32_t hashval = 0;
 	if (length < 0) {

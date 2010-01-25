@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <assert.h> /* TODO: assertion must be enabled */
 #include <zlib.h>
-#include "loki.h"
+#include "lxplib.h"
 
 struct mypage_struct {
 	char *title;
@@ -33,7 +33,7 @@ static unsigned int file_num; /* current file id */
 static unsigned int file_offset; /* current file pointer/offset */
 static uint32_t block_num; /* current block id */
 static uint32_t block_offset; /* uncompressed offset within block */
-static struct loki_block *blocks;
+static struct lxp_block *blocks;
 static int block_cap;
 
 static struct mypage_struct **pages;
@@ -125,7 +125,7 @@ static void out_init (void)
 
 	file_num = 0;
 	file_offset = 0;
-	snprintf(filename, sizeof(filename), "lokidb-%s.%02d.data", language, file_num);
+	snprintf(filename, sizeof(filename), "lxpdb-%s.%02d.data", language, file_num);
 	outfile = fopen(filename, "wb");
 	if (outfile == NULL) {
 		printf("error opening %s for writing\n", filename);
@@ -135,7 +135,7 @@ static void out_init (void)
 	block_num = 0;
 	block_offset = 0;
 	block_cap = 4096;
-	blocks = (struct loki_block *)malloc(block_cap * sizeof(struct loki_block));
+	blocks = (struct lxp_block *)malloc(block_cap * sizeof(struct lxp_block));
 
 	memset(&zstream, 0, sizeof(zstream));
 	assert(deflateInit(&zstream, Z_DEFAULT_COMPRESSION) == Z_OK);
@@ -160,7 +160,7 @@ static void out_write (char *data, int size,
 			char filename[256];
 			fclose(outfile);
 			file_num ++;
-			snprintf(filename, sizeof(filename), "lokidb-%s.%02d.data", language, file_num);
+			snprintf(filename, sizeof(filename), "lxpdb-%s.%02d.data", language, file_num);
 			outfile = fopen(filename, "wb");
 			assert(outfile != NULL);
 			file_offset = 0;
@@ -170,7 +170,7 @@ static void out_write (char *data, int size,
 		block_offset = 0;
 		if (block_num >= block_cap) {
 			block_cap += block_cap;
-			blocks = (struct loki_block *)realloc(blocks, block_cap * sizeof(struct loki_block));
+			blocks = (struct lxp_block *)realloc(blocks, block_cap * sizeof(struct lxp_block));
 		}
 		blocks[block_num].file_num = file_num;
 		blocks[block_num].file_offset = file_offset;
@@ -218,7 +218,7 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 
 	page = (struct mypage_struct *)sp_alloc(sizeof(struct mypage_struct));
 	page->title = sp_strdup(title->ptr);
-	page->title_hash = loki_hash_title(title->ptr, title->len);
+	page->title_hash = lxp_hash_title(title->ptr, title->len);
 	if ((redirect = get_redirect(text))) {
 		page->block_num = 0xffffffff;
 		page->redirect = redirect;
@@ -294,7 +294,7 @@ static int compare_page (const void *p1, const void *p2)
 
 static struct mypage_struct *search_page (char *title)
 {
-	uint32_t title_hash = loki_hash_title(title, -1);
+	uint32_t title_hash = lxp_hash_title(title, -1);
 	int i;
 
 	assert(fingers != NULL);
@@ -311,7 +311,7 @@ static struct mypage_struct *search_page (char *title)
 static void gen_index (void)
 {
 	char filename[256];
-	struct loki_sb superblock;
+	struct lxp_sb superblock;
 	FILE *indexfile;
 	int i, title_sp_offset;
 
@@ -327,7 +327,7 @@ static void gen_index (void)
 		finger_bits = 1;
 	fingers = (uint32_t *)malloc((1 << finger_bits) * 4);
 
-	snprintf(filename, sizeof(filename), "lokidb-%s.index", language);
+	snprintf(filename, sizeof(filename), "lxpdb-%s.index", language);
 	indexfile = fopen(filename, "wb");
 	if (indexfile == NULL) {
 		printf("failed to open %s for writing\n", filename);
@@ -335,7 +335,7 @@ static void gen_index (void)
 	}
 
 	memset(&superblock, 0, sizeof(superblock));
-	memcpy(superblock.magic, "LOKI\0IDX", 8);
+	memcpy(superblock.magic, "LXP\0IDX\0", 8);
 	strcpy(superblock.lang, language);
 	superblock.file_num = file_num;
 	superblock.block_num = block_num;
@@ -345,7 +345,7 @@ static void gen_index (void)
 	superblock.min_file_size = min_file_size;
 	assert(fwrite(&superblock, sizeof(superblock), 1, indexfile) == 1);
 
-	assert(fwrite(blocks, sizeof(struct loki_block) * block_num, 1, indexfile) == 1);
+	assert(fwrite(blocks, sizeof(struct lxp_block) * block_num, 1, indexfile) == 1);
 
 	/* sort pages by hashval */
 	qsort(pages, page_num, sizeof(struct mypage_struct *), compare_page);
@@ -370,9 +370,9 @@ static void gen_index (void)
 		pages[i]->title_sp_offset = title_sp_offset;
 		title_sp_offset += strlen(pages[i]->title) + 1;
 	}
-	/* 2. write loki_page_entry */
+	/* 2. write lxp_page_entry */
 	for (i = 0; i < page_num; i ++) {
-		struct loki_page_entry page_entry;
+		struct lxp_page_entry page_entry;
 
 		page_entry.title_hash = pages[i]->title_hash;
 		page_entry.title_offset = pages[i]->title_sp_offset;

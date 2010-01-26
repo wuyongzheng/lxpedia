@@ -297,7 +297,6 @@ static void load_data (void)
 {
 	struct mcs_struct *title = mcs_create(256);
 	struct mcs_struct *text = mcs_create(65536);
-	int inside_text = 0;
 
 	while (1) {
 		struct mcs_struct *line = read_line();
@@ -307,9 +306,8 @@ static void load_data (void)
 		if (line->len == 0)
 			continue;
 
-		if (inside_text) { /* inside text */
+		if (text->len > 0) { /* inside text */
 			assert(title->len > 0);
-			assert(text->len > 0);
 			if (strstr(line->ptr, "</text>") == NULL) {
 				mcs_cat(text, line->ptr, line->len);
 			} else {
@@ -317,7 +315,6 @@ static void load_data (void)
 				add_page(title, text);
 				mcs_reset(title);
 				mcs_reset(text);
-				inside_text = 0;
 			}
 		} else { /* outside text */
 			if (memcmp(line->ptr, "    <title>", 11) == 0) {
@@ -325,12 +322,10 @@ static void load_data (void)
 					printf("opps, line \"%s\" unexpected\n", line->ptr);
 					exit(1);
 				}
-				assert(title->len == 0);
-				assert(text->len == 0);
+				mcs_reset(title); /* in case <text xml:space="preserve" /> */
 				mcs_cat(title, line->ptr + 11, strstr(line->ptr, "</title>") - line->ptr - 11);
 			} else if (memcmp(line->ptr, "      <text xml:space=\"preserve\">", 33) == 0) {
 				assert(title->len > 0);
-				assert(text->len == 0);
 				if (strstr(line->ptr, "</text>") != NULL) { /* one line text */
 					mcs_cat(text, line->ptr + 33, strstr(line->ptr, "</text>") - line->ptr - 33);
 					add_page(title, text);
@@ -338,7 +333,6 @@ static void load_data (void)
 					mcs_reset(text);
 				} else { /* multi-line text */
 					mcs_cat(text, line->ptr + 33, line->len - 33);
-					inside_text = 1;
 				}
 			}
 		}

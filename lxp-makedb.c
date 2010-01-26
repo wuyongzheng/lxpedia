@@ -250,7 +250,8 @@ static char *get_redirect (struct mcs_struct *text)
 	assert(retval == 0);
 	assert(matches[1].rm_so >= 0);
 	assert(matches[1].rm_eo > matches[1].rm_so);
-	redirect = sp_dup(line + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+	redirect = sp_dup(line + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so + 1);
+	redirect[matches[1].rm_eo - matches[1].rm_so] = '\0';
 
 	/* convert _ to space */
 	for (ptr = redirect; *ptr; ptr ++)

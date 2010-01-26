@@ -308,11 +308,15 @@ static void load_data (void)
 			continue;
 
 		if (inside_text) { /* inside text */
+			assert(title->len > 0);
+			assert(text->len > 0);
 			if (strstr(line->ptr, "</text>") == NULL) {
 				mcs_cat(text, line->ptr, line->len);
 			} else {
 				mcs_cat(text, line->ptr, strstr(line->ptr, "</text>") - line->ptr);
 				add_page(title, text);
+				mcs_reset(title);
+				mcs_reset(text);
 				inside_text = 0;
 			}
 		} else { /* outside text */
@@ -321,13 +325,17 @@ static void load_data (void)
 					printf("opps, line \"%s\" unexpected\n", line->ptr);
 					exit(1);
 				}
-				mcs_reset(title);
+				assert(title->len == 0);
+				assert(text->len == 0);
 				mcs_cat(title, line->ptr + 11, strstr(line->ptr, "</title>") - line->ptr - 11);
 			} else if (memcmp(line->ptr, "      <text xml:space=\"preserve\">", 33) == 0) {
-				mcs_reset(text);
+				assert(title->len > 0);
+				assert(text->len == 0);
 				if (strstr(line->ptr, "</text>") != NULL) { /* one line text */
 					mcs_cat(text, line->ptr + 33, strstr(line->ptr, "</text>") - line->ptr - 33);
 					add_page(title, text);
+					mcs_reset(title);
+					mcs_reset(text);
 				} else { /* multi-line text */
 					mcs_cat(text, line->ptr + 33, line->len - 33);
 					inside_text = 1;

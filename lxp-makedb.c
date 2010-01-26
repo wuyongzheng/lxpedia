@@ -154,6 +154,7 @@ static void out_write_data (unsigned char *data, int size)
 			exit(1);
 		}
 	} while (zstream.avail_in != 0);
+	block_offset += size;
 }
 
 static void out_write (char *title, int title_len, char *text, int text_len,
@@ -162,6 +163,7 @@ static void out_write (char *title, int title_len, char *text, int text_len,
 	/* should we start a new block? */
 	if (file_offset - blocks[block_num].file_offset >= min_block_size) {
 		/* close current block */
+		assert(zstream.avail_in == 0);
 		out_dump();
 		assert(deflate(&zstream, Z_FULL_FLUSH) == Z_OK);
 		out_dump();
@@ -199,6 +201,7 @@ static void out_write (char *title, int title_len, char *text, int text_len,
 
 static void out_fini (void)
 {
+	assert(zstream.avail_in == 0);
 	out_dump();
 	assert(deflate(&zstream, Z_FINISH) == Z_STREAM_END);
 	out_dump();

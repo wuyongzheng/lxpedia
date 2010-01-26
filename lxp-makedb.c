@@ -201,10 +201,15 @@ static void out_write (char *title, int title_len, char *text, int text_len,
 
 static void out_fini (void)
 {
+	int retval;
+
 	assert(zstream.avail_in == 0);
 	out_dump();
-	assert(deflate(&zstream, Z_FINISH) == Z_STREAM_END);
-	out_dump();
+	do {
+		retval = deflate(&zstream, Z_FINISH);
+		out_dump();
+	} while (retval == Z_OK);
+	assert(retval == Z_STREAM_END);
 	deflateEnd(&zstream);
 	blocks[block_num].size_zip = file_offset - blocks[block_num].file_offset;
 	blocks[block_num].size_plain = block_offset;

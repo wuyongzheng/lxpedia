@@ -25,6 +25,7 @@ static int sp_len = 0;
 
 static unsigned int min_block_size = 256 * 1024; /* minimal compressed block size */
 static unsigned int min_file_size = 1024 * 1024 * 1024; /* minimal compressed file size */
+static int gen_listing = 0;
 static const char *language = NULL;
 
 static FILE *outfile;
@@ -47,7 +48,7 @@ static uint32_t *fingers;
 
 static char *sp_alloc (int size)
 {
-	if (sp_pool == NULL) { /* first time running sp_dup */
+	if (sp_pool == NULL) { /* first time running sp_alloc */
 		sp_pool = (char *)malloc(SP_SIZE);
 		sp_len = SP_SIZE;
 	}
@@ -64,11 +65,11 @@ static char *sp_alloc (int size)
 	return sp_pool - size;
 }
 
-static char *sp_dup (char *ptr, int len)
-{
-	char *newptr = sp_alloc(len);
-	return memcpy(newptr, ptr, len);
-}
+// static char *sp_dup (char *ptr, int len)
+// {
+// 	char *newptr = sp_alloc(len);
+// 	return memcpy(newptr, ptr, len);
+// }
 
 static char *sp_strdup (char *str)
 {
@@ -226,7 +227,7 @@ static char *get_redirect (struct mcs_struct *text)
 	regmatch_t matches[2];
 
 	if (!reg_init) {
-		assert(regcomp(&reg, "^ *#redirect *<<([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
+		assert(regcomp(&reg, "^ *#redirect *<<[ :]*([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
 		reg_init = 1;
 	}
 
@@ -234,9 +235,9 @@ static char *get_redirect (struct mcs_struct *text)
 	memcpy(line, text->ptr, line_len);
 	line[line_len] = '\0';
 
-	/* convert tab and newline to space */
+	/* convert tab, newline and underscore to space */
 	for (ptr = line; *ptr; ptr ++) {
-		if (*(unsigned char *)ptr < ' ')
+		if (*(unsigned char *)ptr < ' ' || *ptr == '_')
 			*ptr = ' ';
 		else if (*ptr == '[') // TODO i'm stuck with the regxp problem: why [\[\]]* doesn't work?
 			*ptr = '<';
@@ -250,17 +251,19 @@ static char *get_redirect (struct mcs_struct *text)
 	assert(retval == 0);
 	assert(matches[1].rm_so >= 0);
 	assert(matches[1].rm_eo > matches[1].rm_so);
-	redirect = sp_dup(line + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so + 1);
+	redirect = line + matches[1].rm_so;
 	redirect[matches[1].rm_eo - matches[1].rm_so] = '\0';
 
-	/* convert _ to space */
-	for (ptr = redirect; *ptr; ptr ++)
-		if (*ptr == '_')
-			*ptr = ' ';
+	/* some unifications */
 	if (redirect[0] >= 'a' && redirect[0] <= 'z')
 		redirect[0] -= 'a' - 'A';
+	while (redirect[strlen(redirect) - 1] == ' ')
+		redirect[strlen(redirect) - 1] = '\0';
+	//TODO merge consecutive spaces
+	if (strchr(redirect, '|'))
+		strchr(redirect, '|')[0] = '\0';
 
-	return redirect;
+	return sp_strdup(redirect);
 }
 
 static void add_page (struct mcs_struct *title, struct mcs_struct *text)
@@ -352,11 +355,11 @@ static int compare_page (const void *p1, const void *p2)
 static int search_page (char *title)
 {
 	uint32_t title_hash = lxp_hash_title(title, -1);
-	int low = 0, high = page_num;
-	while (low < high) {
+	int low = 0, high = page_num - 1;
+	while (low <= high) {
 		int med = (low + high) / 2;
 		int comp = 1;
-		if (pages[med]->title_hash == 0 && (comp = strcmp(pages[med]->title, title)) == 0)
+		if (pages[med]->title_hash == title_hash && (comp = strcmp(pages[med]->title, title)) == 0)
 			return med;
 		if (pages[med]->title_hash < title_hash || comp < 0)
 			low = med + 1;
@@ -435,7 +438,7 @@ static void gen_index (void)
 	for (i = 1; i < page_num; i ++) {
 		if (pages[i-1]->title_hash == pages[i]->title_hash &&
 				strcmp(pages[i-1]->title, pages[i]->title) == 0) {
-			printf("duplicate page %s\n", pages[i-1]->title);
+			printf("duplicate page \"%s\"\n", pages[i-1]->title);
 			pages[i]->title_offset = 0xffffffff;
 		}
 	}
@@ -444,9 +447,10 @@ static void gen_index (void)
 		if (pages[i]->block_num == 0xffffffff &&
 				pages[i]->title_offset != 0xffffffff) {
 			int pageid = search_redirect(pages[i]->redirect, 5);
-			if (pageid == -1)
+			if (pageid == -1) {
 				pages[i]->title_offset = 0xffffffff;
-			printf("broken redirect %s -> %s\n", pages[i]->title, pages[i]->redirect);
+				printf("broken redirect \"%s\" -> \"%s\"\n", pages[i]->title, pages[i]->redirect);
+			}
 		}
 	}
 
@@ -522,6 +526,22 @@ static void gen_index (void)
 		}
 	}
 	fclose(indexfile);
+
+	if (gen_listing) {
+		snprintf(filename, sizeof(filename), "lxpdb-%s.list", language);
+		indexfile = fopen(filename, "w");
+		if (indexfile == NULL) {
+			printf("failed to open %s for writing\n", filename);
+			exit(1);
+		}
+		for (i = 0; i < page_num; i ++) {
+			if (pages[i]->block_num == 0xffffffff)
+				fprintf(indexfile, "%s\t%s\n", pages[i]->title, pages[i]->redirect);
+			else
+				fprintf(indexfile, "%s\t%d\t%d\n", pages[i]->title, pages[i]->block_num, pages[i]->block_offset);
+		}
+		fclose(indexfile);
+	}
 }
 
 static void usage (void)
@@ -550,6 +570,8 @@ int main (int argc, char *argv[])
 				printf("min_file_size too small. it should be at least 64000000\n");
 				return 1;
 			}
+		} else if (strcmp(argv[i], "-l") == 0) {
+			gen_listing = 1;
 		} else if (argv[i][0] == '-') {
 			printf("unknown option %s\n", argv[i]);
 			return 1;

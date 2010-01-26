@@ -426,10 +426,10 @@ static void gen_index (void)
 	superblock.min_block_size = min_block_size;
 	superblock.min_file_size = min_file_size;
 	assert(fwrite(&superblock, sizeof(superblock), 1, indexfile) == 1);
-	printf("super block size: %d\n", sizeof(superblock));
+	printf("super block size: %d\n", (int)sizeof(superblock));
 
 	assert(fwrite(blocks, sizeof(struct lxp_block) * block_num, 1, indexfile) == 1);
-	printf("block listing size: %d\n", sizeof(struct lxp_block) * block_num);
+	printf("block listing size: %d\n", (int)sizeof(struct lxp_block) * block_num);
 
 	/* sort pages by hashval */
 	qsort(pages, page_num, sizeof(struct mypage_struct *), compare_page);
@@ -468,7 +468,7 @@ static void gen_index (void)
 		fingers[pages[i]->title_hash >> (32 - finger_bits)] = i;
 	assert(fwrite(fingers, (1 << finger_bits) * 4, 1, indexfile) == 1);
 	printf("finger table size: %d\n", (1 << finger_bits) * 4);
-	printf("page entry size: %d\n", sizeof(struct lxp_page_entry) * page_num);
+	printf("page entry size: %d\n", (int)sizeof(struct lxp_page_entry) * page_num);
 
 	/* calculate page.title_offset */
 	tp_offset = 0;

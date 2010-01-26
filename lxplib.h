@@ -41,8 +41,17 @@ struct lxp_block {
 struct lxp_page_entry {
 	uint32_t title_hash;
 	uint32_t title_offset;
-	uint32_t block_num; /* if it's 0xffffffff, it's a redirect */
-	uint32_t block_offset; /* for redirect, it's redirect title */
+	/* block_num:
+	 * 0-0xffffffff: normal page with full text
+	 * 0xfffffffe: redirect with anchor.
+	 *   block_offset is offset into string pool containing:
+	 *   4-byte page_id of the redirected page,
+	 *   followed by the anchor name.
+	 * 0xffffffff: redirect with no anchor.
+	 *   block_offset is page_id of the redirected page.
+	 */
+	uint32_t block_num;
+	uint32_t block_offset;
 } PACK_STRUCT ;
 
 struct mcs_struct *mcs_create (int initsize);

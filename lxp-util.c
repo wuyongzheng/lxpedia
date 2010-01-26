@@ -20,8 +20,9 @@ void mcs_reset (struct mcs_struct *mcs)
 
 void mcs_expand (struct mcs_struct *mcs, int newsize)
 {
-	if (mcs->cap >= newsize)
+	if (newsize > 0 && newsize <= mcs->cap)
 		return;
+
 	if (newsize <= 0)
 		mcs->cap += mcs->cap;
 	else

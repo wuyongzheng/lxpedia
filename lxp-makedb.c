@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h> /* TODO: assertion must be enabled */
+#include <regex.h>
 #include <zlib.h>
 #include "lxplib.h"
 
@@ -10,7 +11,7 @@ struct mypage_struct {
 	char *title;
 	uint32_t title_hash;
 	uint32_t block_num;
-	uint32_t title_sp_offset;
+	uint32_t title_offset; /* also used to mark deletion */
 	union {
 		uint32_t block_offset;
 		char *redirect;
@@ -63,11 +64,11 @@ static char *sp_alloc (int size)
 	return sp_pool - size;
 }
 
-// static char *sp_dup (char *ptr, int len)
-// {
-// 	char *newptr = sp_alloc(len);
-// 	return memcpy(newptr, ptr, len);
-// }
+static char *sp_dup (char *ptr, int len)
+{
+	char *newptr = sp_alloc(len);
+	return memcpy(newptr, ptr, len);
+}
 
 static char *sp_strdup (char *str)
 {
@@ -88,13 +89,11 @@ static struct mcs_struct *read_line (void)
 	if (fgets(line->ptr, line->cap, stdin) == NULL)
 		return NULL;
 	line->len = strlen(line->ptr);
-	if (line->len == 0) {
-		printf("WTF!\n");
-		return NULL;
-	}
+	assert(line->len > 0);
 
 	while (line->ptr[line->len - 1] != '\n') {
-		mcs_expand(line, 0);
+		if (line->len + 10 > line->cap)
+			mcs_expand(line, 0);
 		if (fgets(line->ptr + line->len, line->cap - line->len, stdin) == NULL)
 			break;
 		line->len = strlen(line->ptr);
@@ -143,7 +142,21 @@ static void out_init (void)
 	zstream.avail_out = sizeof(zoutbuf);
 }
 
-static void out_write (char *data, int size,
+static void out_write_data (unsigned char *data, int size)
+{
+	zstream.next_in = (unsigned char *)data;
+	zstream.avail_in = size;
+	do {
+		if (zstream.avail_out == 0)
+			out_dump();
+		if (deflate(&zstream, Z_NO_FLUSH) != Z_OK) {
+			printf("deflate() failed vnrueisog\n");
+			exit(1);
+		}
+	} while (zstream.avail_in != 0);
+}
+
+static void out_write (char *title, int title_len, char *text, int text_len,
 		uint32_t *the_block_num, uint32_t *the_block_offset)
 {
 	/* should we start a new block? */
@@ -179,16 +192,9 @@ static void out_write (char *data, int size,
 	*the_block_num = block_num;
 	*the_block_offset = block_offset;
 
-	zstream.next_in = (unsigned char *)data;
-	zstream.avail_in = size;
-	do {
-		if (zstream.avail_out == 0)
-			out_dump();
-		if (deflate(&zstream, Z_NO_FLUSH) != Z_OK) {
-			printf("deflate() failed vnrueisog\n");
-			exit(1);
-		}
-	} while (zstream.avail_in != 0);
+	out_write_data((unsigned char *)title, title_len);
+	out_write_data((unsigned char *)"\n", 1);
+	out_write_data((unsigned char *)text, text_len);
 }
 
 static void out_fini (void)
@@ -205,7 +211,47 @@ static void out_fini (void)
 
 static char *get_redirect (struct mcs_struct *text)
 {
-	return NULL;
+	static regex_t reg;
+	static int reg_init = 0;
+	char line[512], *ptr, *redirect;
+	int line_len, retval;
+	regmatch_t matches[2];
+
+	if (!reg_init) {
+		assert(regcomp(&reg, "^ *#redirect *<<([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
+		reg_init = 1;
+	}
+
+	line_len = text->len < sizeof(line) - 1 ? text->len : sizeof(line) - 1;
+	memcpy(line, text->ptr, line_len);
+	line[line_len] = '\0';
+
+	/* convert tab and newline to space */
+	for (ptr = line; *ptr; ptr ++) {
+		if (*(unsigned char *)ptr < ' ')
+			*ptr = ' ';
+		else if (*ptr == '[') // TODO i'm stuck with the regxp problem: why [\[\]]* doesn't work?
+			*ptr = '<';
+		else if (*ptr == ']')
+			*ptr = '>';
+	}
+
+	retval = regexec(&reg, line, 2, matches, 0);
+	if (retval == REG_NOMATCH)
+		return NULL;
+	assert(retval == 0);
+	assert(matches[1].rm_so >= 0);
+	assert(matches[1].rm_eo > matches[1].rm_so);
+	redirect = sp_dup(line + matches[1].rm_so, matches[1].rm_eo - matches[1].rm_so);
+
+	/* convert _ to space */
+	for (ptr = redirect; *ptr; ptr ++)
+		if (*ptr == '_')
+			*ptr = ' ';
+	if (redirect[0] >= 'a' && redirect[0] <= 'z')
+		redirect[0] -= 'a' - 'A';
+
+	return redirect;
 }
 
 static void add_page (struct mcs_struct *title, struct mcs_struct *text)
@@ -217,13 +263,15 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 		return;
 
 	page = (struct mypage_struct *)sp_alloc(sizeof(struct mypage_struct));
+	memset(page, 0, sizeof(struct mypage_struct));
 	page->title = sp_strdup(title->ptr);
 	page->title_hash = lxp_hash_title(title->ptr, title->len);
 	if ((redirect = get_redirect(text))) {
 		page->block_num = 0xffffffff;
 		page->redirect = redirect;
 	} else {
-		out_write(text->ptr, text->len, &page->block_num, &page->block_offset);
+		out_write(title->ptr, title->len, text->ptr, text->len,
+				&page->block_num, &page->block_offset);
 	}
 
 	if (page_num >= page_cap) {
@@ -292,20 +340,42 @@ static int compare_page (const void *p1, const void *p2)
 	return strcmp(page1->title, page2->title);
 }
 
-static struct mypage_struct *search_page (char *title)
+static int search_page (char *title)
 {
 	uint32_t title_hash = lxp_hash_title(title, -1);
-	int i;
-
-	assert(fingers != NULL);
-
-	for (i = fingers[title_hash >> (32 - finger_bits)];
-			pages[i]->title_hash <= title_hash;
-			i ++) {
-		if (pages[i]->title_hash == title_hash && strcmp(pages[i]->title, title) == 0)
-			return pages[i];
+	int low = 0, high = page_num;
+	while (low < high) {
+		int med = (low + high) / 2;
+		int comp = 1;
+		if (pages[med]->title_hash == 0 && (comp = strcmp(pages[med]->title, title)) == 0)
+			return med;
+		if (pages[med]->title_hash < title_hash || comp < 0)
+			low = med + 1;
+		else
+			high = med - 1;
 	}
-	return NULL;
+	return -1;
+}
+
+static int search_redirect (char *redirect, int ttl)
+{
+	char title[256];
+	int pageid;
+
+	if (ttl <= 0)
+		return -1;
+
+	strncpy(title, redirect, sizeof(title));
+	title[sizeof(title) - 1] = '\0';
+	if (strchr(title, '#'))
+		strchr(title, '#')[0] = '\0';
+
+	pageid = search_page(title);
+	if (pageid == -1 || pages[pageid]->title_offset == 0xffffffff)
+		return -1;
+	if (pages[pageid]->block_num != 0xffffffff)
+		return pageid;
+	return search_redirect(pages[pageid]->redirect, ttl - 1);
 }
 
 static void gen_index (void)
@@ -313,7 +383,7 @@ static void gen_index (void)
 	char filename[256];
 	struct lxp_sb superblock;
 	FILE *indexfile;
-	int i, title_sp_offset;
+	int i, j, tp_offset;
 
 	assert(language != NULL);
 	assert(strlen(language) <= 7);
@@ -344,18 +414,39 @@ static void gen_index (void)
 	superblock.min_block_size = min_block_size;
 	superblock.min_file_size = min_file_size;
 	assert(fwrite(&superblock, sizeof(superblock), 1, indexfile) == 1);
+	printf("super block size: %d\n", sizeof(superblock));
 
 	assert(fwrite(blocks, sizeof(struct lxp_block) * block_num, 1, indexfile) == 1);
+	printf("block listing size: %d\n", sizeof(struct lxp_block) * block_num);
 
 	/* sort pages by hashval */
 	qsort(pages, page_num, sizeof(struct mypage_struct *), compare_page);
 
-	/* warn duplicate pages */
+	/* mark duplicate pages */
 	for (i = 1; i < page_num; i ++) {
 		if (pages[i-1]->title_hash == pages[i]->title_hash &&
-				strcmp(pages[i-1]->title, pages[i]->title) == 0)
-			printf("Warning: duplicate page \"%s\"\n", pages[i]->title);
+				strcmp(pages[i-1]->title, pages[i]->title) == 0) {
+			printf("duplicate page %s\n", pages[i-1]->title);
+			pages[i]->title_offset = 0xffffffff;
+		}
 	}
+	/* mark broken redirect */
+	for (i = 0; i < page_num; i ++) {
+		if (pages[i]->block_num == 0xffffffff &&
+				pages[i]->title_offset != 0xffffffff) {
+			int pageid = search_redirect(pages[i]->redirect, 5);
+			if (pageid == -1)
+				pages[i]->title_offset = 0xffffffff;
+			printf("broken redirect %s -> %s\n", pages[i]->title, pages[i]->redirect);
+		}
+	}
+
+	/* delete marked pages */
+	for (i = j = 0; i < page_num; i ++) {
+		if (pages[i]->title_offset != 0xffffffff)
+			pages[j ++] = pages[i];
+	}
+	page_num = j;
 
 	/* setup finger table */
 	for (i = 0; i < 1 << finger_bits; i ++)
@@ -363,42 +454,63 @@ static void gen_index (void)
 	for (i = page_num - 1; i >= 0; i --)
 		fingers[pages[i]->title_hash >> (32 - finger_bits)] = i;
 	assert(fwrite(fingers, (1 << finger_bits) * 4, 1, indexfile) == 1);
+	printf("finger table size: %d\n", (1 << finger_bits) * 4);
+	printf("page entry size: %d\n", sizeof(struct lxp_page_entry) * page_num);
 
-	/* 1. get title_sp_offset */
-	title_sp_offset = 0;
+	/* calculate page.title_offset */
+	tp_offset = 0;
 	for (i = 0; i < page_num; i ++) {
-		pages[i]->title_sp_offset = title_sp_offset;
-		title_sp_offset += strlen(pages[i]->title) + 1;
+		pages[i]->title_offset = tp_offset;
+		tp_offset += strlen(pages[i]->title) + 1;
 	}
-	/* 2. write lxp_page_entry */
+	printf("text pool 1 size: %d\n", tp_offset);
+
+	/* write page entry */
 	for (i = 0; i < page_num; i ++) {
 		struct lxp_page_entry page_entry;
 
 		page_entry.title_hash = pages[i]->title_hash;
-		page_entry.title_offset = pages[i]->title_sp_offset;
-		page_entry.block_num = pages[i]->block_num;
-		if (pages[i]->block_num == 0xffffffff) {
-			struct mypage_struct *another_page = search_page(pages[i]->redirect);
-			if (another_page) {
-				page_entry.block_offset = another_page->title_sp_offset;
-			} else {
-				page_entry.block_offset = title_sp_offset;
-				title_sp_offset += strlen(pages[i]->redirect) + 1;
-			}
-		} else {
+		page_entry.title_offset = pages[i]->title_offset;
+		if (pages[i]->block_num != 0xffffffff) {
+			page_entry.block_num = pages[i]->block_num;
 			page_entry.block_offset = pages[i]->block_offset;
+		} else {
+			int pageid = search_redirect(pages[i]->redirect, 5);
+			char title[512], *anchor;
+			assert(pageid != -1);
+			strncpy(title, pages[i]->redirect, sizeof(title));
+			title[sizeof(title) - 1] = '\0';
+			anchor = strchr(title, '#');
+			if (anchor == NULL || anchor[1] == '\0') {
+				page_entry.block_num = 0xffffffff;
+				page_entry.block_offset = pageid;
+			} else {
+				page_entry.block_num = 0xfffffffe;
+				page_entry.block_offset = tp_offset;
+				tp_offset += 4 + strlen(anchor);
+			}
 		}
 		assert(fwrite(&page_entry, sizeof(page_entry), 1, indexfile) == 1);
 	}
-	/* 3. write string pool */
+	printf("text pool 1+2 size: %d\n", tp_offset);
+
+	/* write text pool */
 	for (i = 0; i < page_num; i ++) {
 		assert(fwrite(pages[i]->title, strlen(pages[i]->title) + 1, 1, indexfile) == 1);
 	}
 	for (i = 0; i < page_num; i ++) {
-		if (!search_page(pages[i]->redirect))
-			assert(fwrite(pages[i]->redirect,
-						strlen(pages[i]->redirect) + 1,
-						1, indexfile) == 1);
+		if (pages[i]->block_num == 0xffffffff) {
+			int pageid = search_redirect(pages[i]->redirect, 5);
+			char title[512], *anchor;
+			assert(pageid != -1);
+			strncpy(title, pages[i]->redirect, sizeof(title));
+			title[sizeof(title) - 1] = '\0';
+			anchor = strchr(title, '#');
+			if (anchor != NULL && anchor[1] != '\0') {
+				assert(fwrite(&pageid, 4, 1, indexfile) == 1);
+				assert(fwrite(anchor + 1, strlen(anchor), 1, indexfile) == 1);
+			}
+		}
 	}
 	fclose(indexfile);
 }

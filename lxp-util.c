@@ -2,6 +2,15 @@
 #include <string.h>
 #include "lxplib.h"
 
+#define ISHEX(c) (((c) >= '0' && (c) <= '9') || \
+	((c) >= 'A' && (c) <= 'A') || \
+	((c) >= 'a' && (c) <= 'a'))
+#define HEXVAL(c) ((unsigned char)(c) >= 'a' ? \
+	(unsigned char)(c)-'a'+10 : \
+	(unsigned char)(c) >= 'A' ? \
+		(unsigned char)(c)-'A'+10 : \
+		(unsigned char)(c)-'0')
+
 struct mcs_struct *mcs_create (int initsize)
 {
 	struct mcs_struct *mcs = (struct mcs_struct *)malloc(sizeof(struct mcs_struct));
@@ -60,4 +69,64 @@ uint32_t lxp_hash_title (char *title, int length)
 			hashval = hashval * 31 + *(unsigned char *)title;
 	}
 	return hashval;
+}
+
+/* decode things like %20 */
+int decode_url_encoding (char *str)
+{
+	char *ptr;
+	int len, count = 0;
+
+restart:
+	for (len = strlen(str), ptr = str; *ptr; ptr ++) {
+		if (*ptr == '%' && ISHEX(*(ptr+1)) && ISHEX(*(ptr+2))) {
+			*ptr = HEXVAL(*(ptr+1)) * 16 + HEXVAL(*(ptr+2));
+			memmove(ptr + 1, ptr + 3, len - (ptr - str + 3) + 1);
+			count ++;
+			goto restart;
+		}
+	}
+	return count;
+}
+
+/* decode things like &eacute; &#257; or &#x3017; */
+int decode_html_entity (char *str)
+{
+	static const char *entities[] = {
+		"&#34;", "&quot;", "\"",
+		"&#38;", "&amp;", "&",
+		"&#39;", "&apos;", "'",
+		"&#60;", "&lt;", "<",
+		"&#62;", "&gt;", ">",
+		NULL, NULL, NULL}; //TODO: add more
+	int i, count = 0;
+
+restart:
+	for (i = 0; entities[i]; i ++) {
+		char *ptr;
+		if (i % 3 == 2)
+			continue;
+		ptr = strstr(str, entities[i]);
+		if (!ptr)
+			continue;
+		memmove(ptr + strlen(entities[i+2-i%3]),
+				ptr + strlen(entities[i]),
+				strlen(ptr + strlen(entities[i])) + 1);
+		memcpy(ptr, entities[i+2-i%3], strlen(entities[i+2-i%3]));
+		count ++;
+		goto restart;
+	}
+	return count;
+}
+
+int decode_url_html (char *str)
+{
+	int sum = 0, retval;
+	do {
+		retval = decode_url_encoding(str);
+		sum += retval;
+		retval = decode_html_entity(str);
+		sum += retval;
+	} while (retval);
+	return sum;
 }

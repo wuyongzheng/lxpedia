@@ -221,7 +221,7 @@ static void out_fini (void)
 
 /* referred to Title.php: newFromRedirectInternal()
  *   trim newline and spaces
- *   match #REDIRECT[[XXX]] and extract XXX
+ *   match #REDIRECT[[XXX]] and extract XXX. also remove "|" and after.
  *   urldecode()
  *   decodeCharReferences(): Convert things like &eacute; &#257; or &#x3017; into real text...
  *   " " to "_"
@@ -234,24 +234,29 @@ static void out_fini (void)
  **/
 static char *get_redirect (struct mcs_struct *text)
 {
+	static const char *namespaces[] = {
+		"User", "Wikipedia", "File", "MediaWiki", "Template", "Help", "Category", "Portal", "Book",
+		"Talk", "User talk", "Wikipedia talk", "File talk", "MediaWiki talk",
+		"Template talk", "Help talk", "Category talk", "Portal talk", "Book talk",
+		"Special", "Media", NULL};
 	static regex_t reg;
 	static int reg_init = 0;
-	char line[512], *ptr, *redirect;
-	int line_len, retval;
+	char line[512], *redirect;
+	int line_len, retval, i;
 	regmatch_t matches[2];
 
-	line_len = text->len < sizeof(line) - 1 ? text->len : sizeof(line) - 1;
+	line_len = text->len < sizeof(line) - 10 ? text->len : sizeof(line) - 10;
 	memcpy(line, text->ptr, line_len);
 	line[line_len] = '\0';
 
 	/* convert tab, newline and underscore to space */
-	for (ptr = line; *ptr; ptr ++) {
-		if (*(unsigned char *)ptr < ' ' || *ptr == '_')
-			*ptr = ' ';
-		else if (*ptr == '[') // TODO i'm stuck with the regxp problem: why [\[\]]* doesn't work?
-			*ptr = '<';
-		else if (*ptr == ']')
-			*ptr = '>';
+	for (redirect = line; *redirect; redirect ++) {
+		if (*(unsigned char *)redirect < ' ' || *redirect == '_')
+			*redirect = ' ';
+		else if (*redirect == '[') // TODO i'm stuck with the regxp problem: why [\[\]]* doesn't work?
+			*redirect = '<';
+		else if (*redirect == ']')
+			*redirect = '>';
 	}
 
 	if (!reg_init) {
@@ -269,32 +274,59 @@ static char *get_redirect (struct mcs_struct *text)
 
 	if (strchr(redirect, '|'))
 		strchr(redirect, '|')[0] = '\0';
-	while (redirect[strlen(redirect) - 1] == ' ')
-		redirect[strlen(redirect) - 1] = '\0';
-	/* decode url encodings and html entities.
-	 * e.g. %20 &eacute; &#257; &#x3017; */
-//	for (ptr = redirect; *ptr; ptr ++) {
-//		if (*ptr == '%') {
-//			if (*(ptr+1))
-//		}
-//	}
+
+	decode_url_html(redirect);
 
 #define REPLACE_ALL(search,replace) { \
-		ptr = strstr(redirect, search); \
-		while (ptr) { \
-			memmove(ptr + strlen(replace), \
-					ptr + strlen(search), \
-					strlen(ptr + strlen(search))); \
-			memcpy(ptr, replace, strlen(replace)); \
-			ptr = strstr(redirect, search); \
+		char *_ptr_ = strstr(redirect, search); \
+		while (_ptr_) { \
+			memmove(_ptr_ + strlen(replace), \
+					_ptr_ + strlen(search), \
+					strlen(_ptr_ + strlen(search)) + 1); \
+			memcpy(_ptr_, replace, strlen(replace)); \
+			_ptr_ = strstr(redirect, search); \
 		} \
 	}
 	REPLACE_ALL("_", " ");
-	if (redirect[0] >= 'a' && redirect[0] <= 'z')
+	REPLACE_ALL("\xE2\x80\x8E", "");
+	REPLACE_ALL("\xE2\x80\x8F", "");
+	REPLACE_ALL("\xE2\x80\xAA", "");
+	REPLACE_ALL("\xE2\x80\xAB", "");
+	REPLACE_ALL("\xE2\x80\xAC", "");
+	REPLACE_ALL("\xE2\x80\xAD", "");
+	REPLACE_ALL("\xE2\x80\xAE", "");
+	REPLACE_ALL("  ", " ");
+	if (redirect[strlen(redirect) - 1] == ' ')
+		redirect[strlen(redirect) - 1] = '\0';
+	if (redirect[0] == ' ')
+		memmove(redirect, redirect + 1, strlen(redirect));
+
+	for (i = 0; namespaces[i]; i ++) {
+		const char *ns = namespaces[i];
+		int ns_len = strlen(ns);
+		if (strncasecmp(redirect, ns, ns_len) != 0)
+			continue;
+		if (redirect[ns_len] != ':' && (redirect[ns_len] != ' ' || redirect[ns_len] != ':'))
+			continue;
+		memcpy(redirect, ns, ns_len);
+		if (redirect[ns_len] == ' ')
+			memmove(redirect + ns_len,
+					redirect + ns_len + 1,
+					strlen(redirect + ns_len));
+		if (redirect[ns_len + 1] == ' ')
+			memmove(redirect + ns_len + 1,
+					redirect + ns_len + 2,
+					strlen(redirect + ns_len + 1));
+		if (redirect[ns_len + 1] >= 'a' && redirect[ns_len + 1] <= 'z')  // TODO: how about non ascii?
+			redirect[ns_len + 1] -= 'a' - 'A';
+	}
+
+	REPLACE_ALL(" #", "#");
+	REPLACE_ALL("# ", "#");
+
+	if (redirect[0] >= 'a' && redirect[0] <= 'z') // TODO: how about non ascii?
 		redirect[0] -= 'a' - 'A';
 
-	REPLACE_ALL("\xe2\x80\x8e", ""); // left-to-right
-	REPLACE_ALL("  ", " ");
 #undef REPLACE_ALL
 
 	return sp_strdup(redirect);
@@ -305,8 +337,12 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 	char *redirect;
 	struct mypage_struct *page;
 
+	/* This is the place to filter pages */
 	if (title->len == 0 || text->len == 0)
 		return;
+
+	decode_html_entity(title->ptr);
+	title->len = strlen(title->ptr);
 
 	page = (struct mypage_struct *)sp_alloc(sizeof(struct mypage_struct));
 	memset(page, 0, sizeof(struct mypage_struct));

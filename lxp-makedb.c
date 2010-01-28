@@ -219,6 +219,19 @@ static void out_fini (void)
 	fclose(outfile);
 }
 
+/* referred to Title.php: newFromRedirectInternal()
+ *   trim newline and spaces
+ *   match #REDIRECT[[XXX]] and extract XXX
+ *   urldecode()
+ *   decodeCharReferences(): Convert things like &eacute; &#257; or &#x3017; into real text...
+ *   " " to "_"
+ *   remove /\xE2\x80[\x8E\x8F\xAA-\xAE]/
+ *   merge and trim "_" and " "
+ *   if it's A:B and A is a namespace, trim B.
+ *   extract A, B from A#B, trim both
+ *   first character toupper
+ *   " " to "_"
+ **/
 static char *get_redirect (struct mcs_struct *text)
 {
 	static regex_t reg;
@@ -226,11 +239,6 @@ static char *get_redirect (struct mcs_struct *text)
 	char line[512], *ptr, *redirect;
 	int line_len, retval;
 	regmatch_t matches[2];
-
-	if (!reg_init) {
-		assert(regcomp(&reg, "^ *#redirect *<<[ :]*([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
-		reg_init = 1;
-	}
 
 	line_len = text->len < sizeof(line) - 1 ? text->len : sizeof(line) - 1;
 	memcpy(line, text->ptr, line_len);
@@ -246,6 +254,10 @@ static char *get_redirect (struct mcs_struct *text)
 			*ptr = '>';
 	}
 
+	if (!reg_init) {
+		assert(regcomp(&reg, "^ *#redirect *:? *<<[ :]*([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
+		reg_init = 1;
+	}
 	retval = regexec(&reg, line, 2, matches, 0);
 	if (retval == REG_NOMATCH)
 		return NULL;
@@ -255,14 +267,35 @@ static char *get_redirect (struct mcs_struct *text)
 	redirect = line + matches[1].rm_so;
 	redirect[matches[1].rm_eo - matches[1].rm_so] = '\0';
 
-	/* some unifications */
-	if (redirect[0] >= 'a' && redirect[0] <= 'z')
-		redirect[0] -= 'a' - 'A';
-	while (redirect[strlen(redirect) - 1] == ' ')
-		redirect[strlen(redirect) - 1] = '\0';
-	//TODO merge consecutive spaces
 	if (strchr(redirect, '|'))
 		strchr(redirect, '|')[0] = '\0';
+	while (redirect[strlen(redirect) - 1] == ' ')
+		redirect[strlen(redirect) - 1] = '\0';
+	/* decode url encodings and html entities.
+	 * e.g. %20 &eacute; &#257; &#x3017; */
+//	for (ptr = redirect; *ptr; ptr ++) {
+//		if (*ptr == '%') {
+//			if (*(ptr+1))
+//		}
+//	}
+
+#define REPLACE_ALL(search,replace) { \
+		ptr = strstr(redirect, search); \
+		while (ptr) { \
+			memmove(ptr + strlen(replace), \
+					ptr + strlen(search), \
+					strlen(ptr + strlen(search))); \
+			memcpy(ptr, replace, strlen(replace)); \
+			ptr = strstr(redirect, search); \
+		} \
+	}
+	REPLACE_ALL("_", " ");
+	if (redirect[0] >= 'a' && redirect[0] <= 'z')
+		redirect[0] -= 'a' - 'A';
+
+	REPLACE_ALL("\xe2\x80\x8e", ""); // left-to-right
+	REPLACE_ALL("  ", " ");
+#undef REPLACE_ALL
 
 	return sp_strdup(redirect);
 }
@@ -372,7 +405,7 @@ static int search_page (char *title)
 	return -1;
 }
 
-static int search_redirect (char *redirect, int ttl)
+static int search_redirect (const char *redirect, int ttl)
 {
 	char title[256];
 	int pageid;

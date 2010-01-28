@@ -3,8 +3,8 @@
 #include "lxplib.h"
 
 #define ISHEX(c) (((c) >= '0' && (c) <= '9') || \
-	((c) >= 'A' && (c) <= 'A') || \
-	((c) >= 'a' && (c) <= 'a'))
+	((c) >= 'A' && (c) <= 'Z') || \
+	((c) >= 'a' && (c) <= 'z'))
 #define HEXVAL(c) ((unsigned char)(c) >= 'a' ? \
 	(unsigned char)(c)-'a'+10 : \
 	(unsigned char)(c) >= 'A' ? \

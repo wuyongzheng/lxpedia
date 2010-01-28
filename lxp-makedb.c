@@ -239,6 +239,14 @@ static char *get_redirect (struct mcs_struct *text)
 		"Talk", "User talk", "Wikipedia talk", "File talk", "MediaWiki talk",
 		"Template talk", "Help talk", "Category talk", "Portal talk", "Book talk",
 		"Special", "Media", NULL};
+	static const char *namespace_aliases[] = {
+		"WP", "Wikipedia",
+		"Project", "Wikipedia",
+		"WT", "Wikipedia talk",
+		"Project talk", "Wikipedia talk",
+		"Image", "File",
+		"Image talk", "File talk",
+		NULL, NULL};
 	static regex_t reg;
 	static int reg_init = 0;
 	char line[512], *redirect;
@@ -301,6 +309,17 @@ static char *get_redirect (struct mcs_struct *text)
 	if (redirect[0] == ' ')
 		memmove(redirect, redirect + 1, strlen(redirect));
 
+	for (i = 0; namespace_aliases[i]; i += 2) {
+		const char *alias = namespace_aliases[i];
+		const char *realns = namespace_aliases[i+1];
+		int alias_len = strlen(alias);
+		int real_len = strlen(realns);
+		// TODO: space
+		if (strncasecmp(redirect, alias, alias_len) != 0 || redirect[alias_len] != ':')
+			continue;
+		memmove(redirect + real_len, redirect + alias_len, strlen(redirect + alias_len) + 1);
+		memcpy(redirect, realns, real_len);
+	}
 	for (i = 0; namespaces[i]; i ++) {
 		const char *ns = namespaces[i];
 		int ns_len = strlen(ns);

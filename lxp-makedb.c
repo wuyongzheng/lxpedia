@@ -283,7 +283,8 @@ static char *get_redirect (struct mcs_struct *text)
 	if (strchr(redirect, '|'))
 		strchr(redirect, '|')[0] = '\0';
 
-	decode_url_html(redirect);
+	while (!decode_url_encoding(redirect) && !decode_html_entity_full(redirect))
+		;
 
 #define REPLACE_ALL(search,replace) { \
 		char *_ptr_ = strstr(redirect, search); \
@@ -360,8 +361,10 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 	if (title->len == 0 || text->len == 0)
 		return;
 
-	decode_html_entity_fast(title->ptr);
+	decode_html_entity_minimal(title->ptr);
 	title->len = strlen(title->ptr);
+	decode_html_entity_minimal(text->ptr);
+	text->len = strlen(text->ptr);
 
 	page = (struct mypage_struct *)sp_alloc(sizeof(struct mypage_struct));
 	memset(page, 0, sizeof(struct mypage_struct));

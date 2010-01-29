@@ -61,9 +61,10 @@ void mcs_cat (struct mcs_struct *dst, char *src, int src_len);
 void mcs_free (struct mcs_struct *mcs);
 
 uint32_t lxp_hash_title (char *title, int length);
+
+int encode_utf8 (char *outstr, unsigned int unival);
 int decode_url_encoding (char *str);
-int decode_html_entity_fast (char *str);
-int decode_html_entity (char *str);
-int decode_url_html (char *str);
+int decode_html_entity_minimal (char *str);
+int decode_html_entity_full (char *str);
 
 #endif

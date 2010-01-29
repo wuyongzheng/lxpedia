@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "lxplib.h"
 
 #define ISHEX(c) (((c) >= '0' && (c) <= '9') || \
@@ -71,86 +72,166 @@ uint32_t lxp_hash_title (char *title, int length)
 	return hashval;
 }
 
+/* given a unicode character "unival", generate the UTF-8
+ * string in "outstr", return the length of it.
+ * The output string is NOT null terminated. */
+int encode_utf8 (char *outstr, unsigned int unival)
+{
+	if (unival < 0x80) {
+		outstr[0] = unival;
+		return 1;
+	}
+	if (unival < 0x800) {
+		outstr[0] = 0xc0 | (unival >> 6);
+		outstr[1] = 0x80 | (unival & 0x3f);
+		return 2;
+	}
+	if (unival < 0x10000) {
+		outstr[0] = 0xe0 | (unival >> 12);
+		outstr[1] = 0x80 | ((unival >> 6) & 0x3f);
+		outstr[2] = 0x80 | (unival & 0x3f);
+		return 3;
+	}
+	if (unival < 0x110000) {
+		outstr[0] = 0xf0 | (unival >> 18);
+		outstr[1] = 0x80 | ((unival >> 12) & 0x3f);
+		outstr[2] = 0x80 | ((unival >> 6) & 0x3f);
+		outstr[3] = 0x80 | (unival & 0x3f);
+		return 4;
+	}
+	assert(0);
+}
+
 /* decode things like %20 */
 int decode_url_encoding (char *str)
 {
-	char *ptr;
-	int len, count = 0;
+	char *inptr, *outptr;
+	int count;
 
-restart:
-	for (len = strlen(str), ptr = str; *ptr; ptr ++) {
-		if (*ptr == '%' && ISHEX(*(ptr+1)) && ISHEX(*(ptr+2))) {
-			*ptr = HEXVAL(*(ptr+1)) * 16 + HEXVAL(*(ptr+2));
-			memmove(ptr + 1, ptr + 3, len - (ptr - str + 3) + 1);
+	inptr = strchr(str, '%');
+	if (!inptr)
+		return 0;
+
+	outptr = inptr;
+	count = 0;
+	while (*inptr) {
+		if (*inptr == '%' && ISHEX(inptr[1]) && ISHEX(inptr[2])) {
+			*(outptr++) = HEXVAL(inptr[1]) * 16 + HEXVAL(inptr[2]);
+			inptr += 3;
 			count ++;
-			goto restart;
-		}
-	}
-	return count;
-}
-
-/* only decode the must-escape ones */
-int decode_html_entity_fast (char *str)
-{
-	static const char *entities[] = {
-		"&quot;", "\"",
-		"&amp;", "&",
-		"&apos;", "'",
-		"&lt;", "<",
-		"&gt;", ">",
-		NULL, NULL};
-	int i, count = 0;
-
-restart:
-	for (i = 0; entities[i]; i += 2) {
-		char *ptr = strstr(str, entities[i]);
-		if (!ptr)
 			continue;
-		memmove(ptr + strlen(entities[i+1]),
-				ptr + strlen(entities[i]),
-				strlen(ptr + strlen(entities[i])) + 1);
-		memcpy(ptr, entities[i+1], strlen(entities[i+1]));
-		count ++;
-		goto restart;
+		}
+		*(outptr++) = *(inptr++);
 	}
+	*outptr = '\0';
 	return count;
 }
+
+/* only decode the must-escape ones: &quot; &amp; &apos; &lt; &gt;
+ * it's used to extract text from wiki xml dump */
+int decode_html_entity_minimal (char *str)
+{
+	char *inptr, *outptr;
+	int count;
+
+	inptr = strchr(str, '&');
+	if (!inptr)
+		return 0;
+
+	outptr = inptr;
+	count = 0;
+	while (*inptr) {
+		if (*inptr != '&')
+			goto nomatch;
+		if (memcmp(inptr, "&quot;", 6) == 0) {*(outptr++) = '"';  inptr += 6; count++; continue;}
+		if (memcmp(inptr, "&amp;",  5) == 0) {*(outptr++) = '&';  inptr += 5; count++; continue;}
+		if (memcmp(inptr, "&apos;", 6) == 0) {*(outptr++) = '\''; inptr += 6; count++; continue;}
+		if (memcmp(inptr, "&lt;",   4) == 0) {*(outptr++) = '<';  inptr += 4; count++; continue;}
+		if (memcmp(inptr, "&gt;",   4) == 0) {*(outptr++) = '>';  inptr += 4; count++; continue;}
+nomatch:
+		*(outptr++) = *(inptr++);
+	}
+	*outptr = '\0';
+	return count;
+}
+
+struct entity_struct {
+	int name_len;
+	int value_len;
+	const char *name;
+	const char *value;
+};
+/* They ought to be sorted by probability, higher probability goes in front. */
+const struct entity_struct entities_full[] = {
+	{6, 1, "&quot;", "\""},
+	{5, 1, "&amp;", "&"},
+	{6, 1, "&apos;", "'"},
+	{4, 1, "&lt;", "<"},
+	{4, 1, "&gt;", ">"},
+	{0, 0, NULL, NULL}
+};
 
 /* decode things like &eacute; &#257; or &#x3017; */
-int decode_html_entity (char *str)
+int decode_html_entity_full (char *str)
 {
-	static const char *entities[] = {
-		"&quot;", "\"",
-		"&amp;", "&",
-		"&apos;", "'",
-		"&lt;", "<",
-		"&gt;", ">",
-		NULL, NULL}; //TODO: add more
-	int i, count = 0;
+	char *inptr, *outptr;
+	int count;
 
-restart:
-	for (i = 0; entities[i]; i += 2) {
-		char *ptr = strstr(str, entities[i]);
-		if (!ptr)
-			continue;
-		memmove(ptr + strlen(entities[i+1]),
-				ptr + strlen(entities[i]),
-				strlen(ptr + strlen(entities[i])) + 1);
-		memcpy(ptr, entities[i+1], strlen(entities[i+1]));
+	inptr = strchr(str, '&');
+	if (!inptr)
+		return 0;
+
+	outptr = inptr;
+	count = 0;
+	while(*inptr) {
+		const struct entity_struct *entity;
+		const char *replace;
+		char replace_buff[5];
+		int match_len, replace_len;
+
+		if (*inptr != '&')
+			goto nomatch;
+		for (entity = entities_full; entity->name_len; entity ++) {
+			if (memcmp(inptr, entity->name, entity->name_len) == 0) {
+				replace = entity->value;
+				match_len = entity->name_len;
+				replace_len = entity->value_len;
+				goto match;
+			}
+		}
+		if (*(inptr+1) != '#')
+			goto nomatch;
+		if (*(inptr+2) == 'x') { /* &#x3017; */
+			int digits, unival;
+			for (digits = 0, unival = 0; digits < 7 && ISHEX(*(inptr+3+digits)); digits ++)
+				unival = unival * 16 + HEXVAL(*(inptr+3+digits));
+			if (digits == 0 || *(inptr+3+digits) != ';')
+				goto nomatch;
+			replace_len = encode_utf8(replace_buff, unival);
+			replace = replace_buff;
+			match_len = digits + 4;
+		} else { /* &#257; */
+			int digits, unival;
+			for (digits = 0, unival = 0; digits < 8 && *(inptr+2+digits) >= '0' &&
+					*(inptr+2+digits) <= '9'; digits ++)
+				unival = unival * 10 + *(inptr+2+digits) - '0';
+			if (digits == 0 || *(inptr+2+digits) != ';')
+				goto nomatch;
+			replace_len = encode_utf8(replace_buff, unival);
+			replace = replace_buff;
+			match_len = digits + 3;
+		}
+
+match:
+		memcpy(outptr, replace, replace_len);
+		inptr += match_len;
+		outptr += replace_len;
 		count ++;
-		goto restart;
-	}
-	return count;
-}
+		continue;
 
-int decode_url_html (char *str)
-{
-	int sum = 0, retval;
-	do {
-		retval = decode_url_encoding(str);
-		sum += retval;
-		retval = decode_html_entity(str);
-		sum += retval;
-	} while (retval);
-	return sum;
+nomatch:
+		*(outptr++) = *(inptr++);
+	}
+	*outptr = '\0';
+	return count;
 }

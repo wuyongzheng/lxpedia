@@ -3,8 +3,8 @@
 #include "lxplib.h"
 
 #define ISHEX(c) (((c) >= '0' && (c) <= '9') || \
-	((c) >= 'A' && (c) <= 'Z') || \
-	((c) >= 'a' && (c) <= 'z'))
+	((c) >= 'A' && (c) <= 'f') || \
+	((c) >= 'a' && (c) <= 'f'))
 #define HEXVAL(c) ((unsigned char)(c) >= 'a' ? \
 	(unsigned char)(c)-'a'+10 : \
 	(unsigned char)(c) >= 'A' ? \
@@ -89,30 +89,54 @@ restart:
 	return count;
 }
 
+/* only decode the must-escape ones */
+int decode_html_entity_fast (char *str)
+{
+	static const char *entities[] = {
+		"&quot;", "\"",
+		"&amp;", "&",
+		"&apos;", "'",
+		"&lt;", "<",
+		"&gt;", ">",
+		NULL, NULL};
+	int i, count = 0;
+
+restart:
+	for (i = 0; entities[i]; i += 2) {
+		char *ptr = strstr(str, entities[i]);
+		if (!ptr)
+			continue;
+		memmove(ptr + strlen(entities[i+1]),
+				ptr + strlen(entities[i]),
+				strlen(ptr + strlen(entities[i])) + 1);
+		memcpy(ptr, entities[i+1], strlen(entities[i+1]));
+		count ++;
+		goto restart;
+	}
+	return count;
+}
+
 /* decode things like &eacute; &#257; or &#x3017; */
 int decode_html_entity (char *str)
 {
 	static const char *entities[] = {
-		"&#34;", "&quot;", "\"",
-		"&#38;", "&amp;", "&",
-		"&#39;", "&apos;", "'",
-		"&#60;", "&lt;", "<",
-		"&#62;", "&gt;", ">",
-		NULL, NULL, NULL}; //TODO: add more
+		"&quot;", "\"",
+		"&amp;", "&",
+		"&apos;", "'",
+		"&lt;", "<",
+		"&gt;", ">",
+		NULL, NULL}; //TODO: add more
 	int i, count = 0;
 
 restart:
-	for (i = 0; entities[i]; i ++) {
-		char *ptr;
-		if (i % 3 == 2)
-			continue;
-		ptr = strstr(str, entities[i]);
+	for (i = 0; entities[i]; i += 2) {
+		char *ptr = strstr(str, entities[i]);
 		if (!ptr)
 			continue;
-		memmove(ptr + strlen(entities[i+2-i%3]),
+		memmove(ptr + strlen(entities[i+1]),
 				ptr + strlen(entities[i]),
 				strlen(ptr + strlen(entities[i])) + 1);
-		memcpy(ptr, entities[i+2-i%3], strlen(entities[i+2-i%3]));
+		memcpy(ptr, entities[i+1], strlen(entities[i+1]));
 		count ++;
 		goto restart;
 	}

@@ -62,6 +62,7 @@ void mcs_free (struct mcs_struct *mcs);
 
 uint32_t lxp_hash_title (char *title, int length);
 int decode_url_encoding (char *str);
+int decode_html_entity_fast (char *str);
 int decode_html_entity (char *str);
 int decode_url_html (char *str);
 

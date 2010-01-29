@@ -360,7 +360,7 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 	if (title->len == 0 || text->len == 0)
 		return;
 
-	decode_html_entity(title->ptr);
+	decode_html_entity_fast(title->ptr);
 	title->len = strlen(title->ptr);
 
 	page = (struct mypage_struct *)sp_alloc(sizeof(struct mypage_struct));

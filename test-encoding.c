@@ -46,6 +46,19 @@ static const char *samples_more_ent[] = {
 	"<a href=\"http://www.example.com\">example</a>",
 	NULL, NULL
 };
+static const char *samples_fupper[] = {
+	"",
+	"",
+	"abc",
+	"Abc",
+	"ABC",
+	"ABC",
+	"µ-law algorithm",
+	"Μ-law algorithm",
+	"école",
+	"École",
+	NULL, NULL
+};
 
 int main (void)
 {
@@ -87,6 +100,16 @@ int main (void)
 		if (strcmp(buff, samples_more_ent[i+1]) != 0) {
 			printf("decode_html_entity_full: in=\"%s\" correct=\"%s\" out=\"%s\"\n",
 					samples_more_ent[i], samples_more_ent[i+1], buff);
+			return 1;
+		}
+	}
+
+	for (i = 0; samples_fupper[i]; i += 2) {
+		strcpy(buff, samples_fupper[i]);
+		first_toupper(buff);
+		if (strcmp(buff, samples_fupper[i+1]) != 0) {
+			printf("first_toupper: in=\"%s\" correct=\"%s\" out=\"%s\"\n",
+					samples_fupper[i], samples_fupper[i+1], buff);
 			return 1;
 		}
 	}

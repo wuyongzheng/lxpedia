@@ -337,15 +337,14 @@ static char *get_redirect (struct mcs_struct *text)
 			memmove(redirect + ns_len + 1,
 					redirect + ns_len + 2,
 					strlen(redirect + ns_len + 1));
-		if (redirect[ns_len + 1] >= 'a' && redirect[ns_len + 1] <= 'z')  // TODO: how about non ascii?
-			redirect[ns_len + 1] -= 'a' - 'A';
+		first_toupper(redirect + ns_len + 1);
 	}
+	//TODO: how about interwiki?
 
 	REPLACE_ALL(" #", "#");
 	REPLACE_ALL("# ", "#");
 
-	if (redirect[0] >= 'a' && redirect[0] <= 'z') // TODO: how about non ascii?
-		redirect[0] -= 'a' - 'A';
+	first_toupper(redirect);
 
 #undef REPLACE_ALL
 

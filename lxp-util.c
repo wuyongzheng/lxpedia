@@ -72,6 +72,42 @@ uint32_t lxp_hash_title (char *title, int length)
 	return hashval;
 }
 
+int decode_utf8 (const char *instr, unsigned int *punival)
+{
+	const unsigned char *uinstr = (const unsigned char *)instr;
+	if (uinstr[0] < 0x80) {
+		*punival = uinstr[0];
+		return 1;
+	}
+	if (uinstr[0] < 0xc0)
+		return 0;
+	if (uinstr[0] < 0xe0) {
+		if ((uinstr[1] & 0xc0) != 0x80)
+			return 0;
+		*punival = ((uinstr[0] & 0x1f) << 6) | (uinstr[1] & 0x3f);
+		return 2;
+	}
+	if (uinstr[0] < 0xf0) {
+		if ((uinstr[1] & 0xc0) != 0x80 || (uinstr[2] & 0xc0) != 0x80)
+			return 0;
+		*punival = ((uinstr[0] & 0x0f) << 12) |
+			((uinstr[1] & 0x3f) << 6) |
+			(uinstr[2] & 0x3f);
+		return 3;
+	}
+	if (uinstr[0] < 0xf8) {
+		if ((uinstr[1] & 0xc0) != 0x80 || (uinstr[2] & 0xc0) != 0x80 ||
+				(uinstr[3] & 0xc0) != 0x80)
+			return 0;
+		*punival = ((uinstr[0] & 0x07) << 18) |
+			((uinstr[1] & 0x3f) << 12) |
+			((uinstr[2] & 0x3f) << 6) |
+			(uinstr[3] & 0x3f);
+		return 4;
+	}
+	return 0;
+}
+
 /* given a unicode character "unival", generate the UTF-8
  * string in "outstr", return the length of it.
  * The output string is NOT null terminated. */
@@ -99,7 +135,34 @@ int encode_utf8 (char *outstr, unsigned int unival)
 		outstr[3] = 0x80 | (unival & 0x3f);
 		return 4;
 	}
-	assert(0);
+	return 0;
+}
+
+/* change the first character of a unicode string to upper case */
+void first_toupper (char *str)
+{
+	int inlen, outlen;
+	unsigned int inunival, outunival;
+	char buff[8];
+
+	if ((unsigned char)str[0] < 0x80) {
+		if (str[0] >= 'a' && str[0] <= 'z')
+			str[0] -= 'a' - 'A';
+		return;
+	}
+
+	inlen = decode_utf8(str, &inunival);
+	if (inlen == 0 || inunival >= 65536)
+		return;
+	outunival = uni_toupper(inunival);
+	if (outunival == 0 || outunival == inunival)
+		return;
+	outlen = encode_utf8(buff, outunival);
+	assert(outlen > 0);
+
+	if (inlen != outlen)
+		memmove(str + outlen, str + inlen, strlen(str + inlen) + 1);
+	memcpy(str, buff, outlen);
 }
 
 /* decode things like %20 */
@@ -439,6 +502,8 @@ int decode_html_entity_full (char *str)
 
 		if (*inptr != '&')
 			goto nomatch;
+
+		/* TODO: should binary search or hashtable */
 		for (entity = entities_full; entity->name_len; entity ++) {
 			if (memcmp(inptr, entity->name, entity->name_len) == 0) {
 				replace = entity->value;

@@ -62,7 +62,14 @@ void mcs_free (struct mcs_struct *mcs);
 
 uint32_t lxp_hash_title (char *title, int length);
 
+extern const unsigned short cmap_toupper[65536];
+extern const unsigned short cmap_tolower[65536];
+#define uni_toupper(c) (cmap_toupper[c])
+#define uni_tolower(c) (cmap_tolower[c])
+
+int decode_utf8 (const char *instr, unsigned int *punival);
 int encode_utf8 (char *outstr, unsigned int unival);
+void first_toupper (char *str);
 int decode_url_encoding (char *str);
 int decode_html_entity_minimal (char *str);
 int decode_html_entity_full (char *str);

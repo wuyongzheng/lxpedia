@@ -524,6 +524,18 @@ static void gen_index (void)
 	assert(fwrite(blocks, sizeof(struct lxp_block) * block_num, 1, indexfile) == 1);
 	printf("block listing size: %d\n", (int)sizeof(struct lxp_block) * block_num);
 
+	/* check compression ratio, for fun */
+	{
+		int64_t plain_size = 0, comp_size = 0;
+		for (i = 0; i < block_num; i ++) {
+			plain_size += blocks[i].size_plain;
+			comp_size += blocks[i].size_zip;
+		}
+		printf("%.3fMB text is compressed into %.3fMB in %d blocks in %d files\n",
+				plain_size / 1048576.0, comp_size / 1048576.0,
+				block_num, blocks[block_num-1].file_num);
+	}
+
 	/* sort pages by hashval */
 	qsort(pages, page_num, sizeof(struct mypage_struct *), compare_page);
 

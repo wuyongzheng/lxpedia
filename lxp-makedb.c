@@ -554,6 +554,12 @@ static void gen_index (void)
 	}
 	page_num = j;
 
+	/* count unique hashval, for fun */
+	for (i = j = 1; i < page_num; i ++)
+		if (pages[i]->title_hash != pages[i-1]->title_hash)
+			j ++;
+	printf("%d page title hashed into %d hash values\n", page_num, j);
+
 	/* setup finger table */
 	for (i = 0; i < 1 << finger_bits; i ++)
 		fingers[i] = page_num;

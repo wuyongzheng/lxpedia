@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h> /* TODO: assertion must be enabled */
-#include <regex.h>
 #include <zlib.h>
 #include "lxplib.h"
 
@@ -219,142 +218,10 @@ static void out_fini (void)
 	fclose(outfile);
 }
 
-/* referred to Title.php: newFromRedirectInternal()
- *   trim newline and spaces
- *   match #REDIRECT[[XXX]] and extract XXX. also remove "|" and after.
- *   urldecode()
- *   decodeCharReferences(): Convert things like &eacute; &#257; or &#x3017; into real text...
- *   " " to "_"
- *   remove /\xE2\x80[\x8E\x8F\xAA-\xAE]/
- *   merge and trim "_" and " "
- *   if it's A:B and A is a namespace, trim B.
- *   extract A, B from A#B, trim both
- *   first character toupper
- *   " " to "_"
- **/
-static char *get_redirect (struct mcs_struct *text)
-{
-	static const char *namespaces[] = {
-		"User", "Wikipedia", "File", "MediaWiki", "Template", "Help", "Category", "Portal", "Book",
-		"Talk", "User talk", "Wikipedia talk", "File talk", "MediaWiki talk",
-		"Template talk", "Help talk", "Category talk", "Portal talk", "Book talk",
-		"Special", "Media", NULL};
-	static const char *namespace_aliases[] = {
-		"WP", "Wikipedia",
-		"Project", "Wikipedia",
-		"WT", "Wikipedia talk",
-		"Project talk", "Wikipedia talk",
-		"Image", "File",
-		"Image talk", "File talk",
-		NULL, NULL};
-	static regex_t reg;
-	static int reg_init = 0;
-	char line[512], *redirect;
-	int line_len, retval, i;
-	regmatch_t matches[2];
-
-	line_len = text->len < sizeof(line) - 10 ? text->len : sizeof(line) - 10;
-	memcpy(line, text->ptr, line_len);
-	line[line_len] = '\0';
-
-	/* convert tab, newline and underscore to space */
-	for (redirect = line; *redirect; redirect ++) {
-		if (*(unsigned char *)redirect < ' ' || *redirect == '_')
-			*redirect = ' ';
-		else if (*redirect == '[') // TODO i'm stuck with the regxp problem: why [\[\]]* doesn't work?
-			*redirect = '<';
-		else if (*redirect == ']')
-			*redirect = '>';
-	}
-
-	if (!reg_init) {
-		assert(regcomp(&reg, "^ *#redirect *:? *<<[ :]*([^<>]+)>>", REG_ICASE | REG_EXTENDED) == 0);
-		reg_init = 1;
-	}
-	retval = regexec(&reg, line, 2, matches, 0);
-	if (retval == REG_NOMATCH)
-		return NULL;
-	assert(retval == 0);
-	assert(matches[1].rm_so >= 0);
-	assert(matches[1].rm_eo > matches[1].rm_so);
-	redirect = line + matches[1].rm_so;
-	redirect[matches[1].rm_eo - matches[1].rm_so] = '\0';
-
-	if (strchr(redirect, '|'))
-		strchr(redirect, '|')[0] = '\0';
-
-	while (decode_url_encoding(redirect) || decode_html_entity_full(redirect))
-		;
-
-#define REPLACE_ALL(search,replace) { \
-		char *_ptr_ = strstr(redirect, search); \
-		while (_ptr_) { \
-			memmove(_ptr_ + strlen(replace), \
-					_ptr_ + strlen(search), \
-					strlen(_ptr_ + strlen(search)) + 1); \
-			memcpy(_ptr_, replace, strlen(replace)); \
-			_ptr_ = strstr(redirect, search); \
-		} \
-	}
-	REPLACE_ALL("_", " ");
-	REPLACE_ALL("\xE2\x80\x8E", "");
-	REPLACE_ALL("\xE2\x80\x8F", "");
-	REPLACE_ALL("\xE2\x80\xAA", "");
-	REPLACE_ALL("\xE2\x80\xAB", "");
-	REPLACE_ALL("\xE2\x80\xAC", "");
-	REPLACE_ALL("\xE2\x80\xAD", "");
-	REPLACE_ALL("\xE2\x80\xAE", "");
-	REPLACE_ALL("  ", " ");
-	if (redirect[strlen(redirect) - 1] == ' ')
-		redirect[strlen(redirect) - 1] = '\0';
-	if (redirect[0] == ' ')
-		memmove(redirect, redirect + 1, strlen(redirect));
-
-	for (i = 0; namespace_aliases[i]; i += 2) {
-		const char *alias = namespace_aliases[i];
-		const char *realns = namespace_aliases[i+1];
-		int alias_len = strlen(alias);
-		int real_len = strlen(realns);
-		// TODO: space
-		if (strncasecmp(redirect, alias, alias_len) != 0 || redirect[alias_len] != ':')
-			continue;
-		memmove(redirect + real_len, redirect + alias_len, strlen(redirect + alias_len) + 1);
-		memcpy(redirect, realns, real_len);
-	}
-	for (i = 0; namespaces[i]; i ++) {
-		const char *ns = namespaces[i];
-		int ns_len = strlen(ns);
-		if (strncasecmp(redirect, ns, ns_len) != 0)
-			continue;
-		if (redirect[ns_len] != ':' && (redirect[ns_len] != ' ' || redirect[ns_len] != ':'))
-			continue;
-		memcpy(redirect, ns, ns_len);
-		if (redirect[ns_len] == ' ')
-			memmove(redirect + ns_len,
-					redirect + ns_len + 1,
-					strlen(redirect + ns_len));
-		if (redirect[ns_len + 1] == ' ')
-			memmove(redirect + ns_len + 1,
-					redirect + ns_len + 2,
-					strlen(redirect + ns_len + 1));
-		first_toupper(redirect + ns_len + 1);
-	}
-	//TODO: how about interwiki?
-
-	REPLACE_ALL(" #", "#");
-	REPLACE_ALL("# ", "#");
-
-	first_toupper(redirect);
-
-#undef REPLACE_ALL
-
-	return sp_strdup(redirect);
-}
-
 static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 {
-	char *redirect;
 	struct mypage_struct *page;
+	char red_title[512], red_anchor[256];
 
 	/* This is the place to filter pages */
 	if (title->len == 0 || text->len == 0)
@@ -369,9 +236,19 @@ static void add_page (struct mcs_struct *title, struct mcs_struct *text)
 	memset(page, 0, sizeof(struct mypage_struct));
 	page->title = sp_strdup(title->ptr);
 	page->title_hash = lxp_hash_title(title->ptr, title->len);
-	if ((redirect = get_redirect(text))) {
-		page->block_num = 0xffffffff;
-		page->redirect = redirect;
+	if (parse_title_from_redirect_keepns(text->ptr, text->len,
+				red_title, sizeof(red_title),
+				red_anchor, sizeof(red_anchor),
+				NULL, 0, NULL, 0)) {
+		if (red_anchor[0]) {
+			page->block_num = 0xfffffffe;
+			page->redirect = sp_alloc(strlen(red_title) + strlen(red_anchor) + 2);
+			strcpy(page->redirect, red_title);
+			strcpy(page->redirect + strlen(red_title) + 1, red_anchor);
+		} else {
+			page->block_num = 0xffffffff;
+			page->redirect = sp_strdup(red_title);
+		}
 	} else {
 		out_write(title->ptr, title->len, text->ptr, text->len,
 				&page->block_num, &page->block_offset);
@@ -445,7 +322,7 @@ static int compare_page (const void *p1, const void *p2)
 	return strcmp(page1->title, page2->title);
 }
 
-static int search_page (char *title)
+static int search_page (const char *title)
 {
 	uint32_t title_hash = lxp_hash_title(title, -1);
 	int low = 0, high = page_num - 1;
@@ -464,18 +341,12 @@ static int search_page (char *title)
 
 static int search_redirect (const char *redirect, int ttl)
 {
-	char title[256];
 	int pageid;
 
 	if (ttl <= 0)
 		return -1;
 
-	strncpy(title, redirect, sizeof(title));
-	title[sizeof(title) - 1] = '\0';
-	if (strchr(title, '#'))
-		strchr(title, '#')[0] = '\0';
-
-	pageid = search_page(title);
+	pageid = search_page(redirect);
 	if (pageid == -1 || pages[pageid]->title_offset == 0xffffffff)
 		return -1;
 	if (pages[pageid]->block_num != 0xffffffff)
@@ -549,7 +420,7 @@ static void gen_index (void)
 	}
 	/* mark broken redirect */
 	for (i = 0; i < page_num; i ++) {
-		if (pages[i]->block_num == 0xffffffff &&
+		if ((pages[i]->block_num == 0xffffffff || pages[i]->block_num == 0xfffffffe) &&
 				pages[i]->title_offset != 0xffffffff) {
 			int pageid = search_redirect(pages[i]->redirect, 5);
 			if (pageid == -1) {
@@ -595,20 +466,17 @@ static void gen_index (void)
 
 		page_entry.title_hash = pages[i]->title_hash;
 		page_entry.title_offset = pages[i]->title_offset;
-		if (pages[i]->block_num != 0xffffffff) {
+		if (pages[i]->block_num != 0xffffffff && pages[i]->block_num != 0xfffffffe) {
 			page_entry.block_num = pages[i]->block_num;
 			page_entry.block_offset = pages[i]->block_offset;
 		} else {
 			int pageid = search_redirect(pages[i]->redirect, 5);
-			char title[512], *anchor;
 			assert(pageid != -1);
-			strncpy(title, pages[i]->redirect, sizeof(title));
-			title[sizeof(title) - 1] = '\0';
-			anchor = strchr(title, '#');
-			if (anchor == NULL || anchor[1] == '\0') {
+			if (pages[i]->block_num == 0xffffffff) {
 				page_entry.block_num = 0xffffffff;
 				page_entry.block_offset = pageid;
 			} else {
+				char *anchor = pages[i]->redirect + strlen(pages[i]->redirect) + 1;
 				page_entry.block_num = 0xfffffffe;
 				page_entry.block_offset = tp_offset;
 				tp_offset += 4 + strlen(anchor);
@@ -623,17 +491,12 @@ static void gen_index (void)
 		assert(fwrite(pages[i]->title, strlen(pages[i]->title) + 1, 1, indexfile) == 1);
 	}
 	for (i = 0; i < page_num; i ++) {
-		if (pages[i]->block_num == 0xffffffff) {
+		if (pages[i]->block_num == 0xfffffffe) {
 			int pageid = search_redirect(pages[i]->redirect, 5);
-			char title[512], *anchor;
+			char *anchor = pages[i]->redirect + strlen(pages[i]->redirect) + 1;
 			assert(pageid != -1);
-			strncpy(title, pages[i]->redirect, sizeof(title));
-			title[sizeof(title) - 1] = '\0';
-			anchor = strchr(title, '#');
-			if (anchor != NULL && anchor[1] != '\0') {
-				assert(fwrite(&pageid, 4, 1, indexfile) == 1);
-				assert(fwrite(anchor + 1, strlen(anchor), 1, indexfile) == 1);
-			}
+			assert(fwrite(&pageid, 4, 1, indexfile) == 1);
+			assert(fwrite(anchor, strlen(anchor) + 1, 1, indexfile) == 1);
 		}
 	}
 	fclose(indexfile);

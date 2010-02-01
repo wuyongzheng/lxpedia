@@ -12,6 +12,17 @@
 		(unsigned char)(c)-'A'+10 : \
 		(unsigned char)(c)-'0')
 
+/* copy at most n-1 bytes to dest.
+ * dest will always be null terminated. */
+char *mystrncpy (char *dest, const char *src, size_t n)
+{
+	while (n > 1 && *src) {
+		*(dest ++) = *(src ++);
+		n --;
+	}
+	*dest = '\0';
+}
+
 struct mcs_struct *mcs_create (int initsize)
 {
 	struct mcs_struct *mcs = (struct mcs_struct *)malloc(sizeof(struct mcs_struct));

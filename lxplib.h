@@ -54,6 +54,7 @@ struct lxp_page_entry {
 	uint32_t block_offset;
 } PACK_STRUCT ;
 
+char *mystrncpy (char *dest, const char *src, size_t n);
 struct mcs_struct *mcs_create (int initsize);
 void mcs_reset (struct mcs_struct *mcs);
 void mcs_expand (struct mcs_struct *mcs, int newsize);
@@ -73,5 +74,22 @@ void first_toupper (char *str);
 int decode_url_encoding (char *str);
 int decode_html_entity_minimal (char *str);
 int decode_html_entity_full (char *str);
+
+int parse_title_from_text (const char *_text, int text_len,
+		char *title, int title_size,
+		char *anchor, int anchor_size,
+		char *interwiki, int interwiki_size,
+		char *namespace, int namespace_size,
+		char *label, int label_size);
+int parse_title_from_text_keepns (const char *text, int text_len,
+		char *title, int title_size,
+		char *anchor, int anchor_size,
+		char *interwiki, int interwiki_size,
+		char *label, int label_size);
+int parse_title_from_redirect_keepns (const char *_text, int text_len,
+		char *title, int title_size,
+		char *anchor, int anchor_size,
+		char *interwiki, int interwiki_size,
+		char *label, int label_size);
 
 #endif

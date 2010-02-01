@@ -23,7 +23,7 @@ struct mypage_struct {
 static char *sp_pool = NULL;
 static int sp_len = 0;
 
-static unsigned int min_block_size = 64 * 1024; /* minimal compressed block size */
+static unsigned int min_block_size = 16 * 1024; /* minimal compressed block size */
 static unsigned int min_file_size = 1024 * 1024 * 1024; /* minimal compressed file size */
 static int gen_listing = 0;
 static const char *language = NULL;

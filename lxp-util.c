@@ -14,7 +14,7 @@
 
 /* copy at most n-1 bytes to dest.
  * dest will always be null terminated. */
-char *mystrncpy (char *dest, const char *src, size_t n)
+void mystrncpy (char *dest, const char *src, size_t n)
 {
 	while (n > 1 && *src) {
 		*(dest ++) = *(src ++);
@@ -70,7 +70,7 @@ void mcs_free (struct mcs_struct *mcs)
 	free(mcs);
 }
 
-uint32_t lxp_hash_title (char *title, int length)
+uint32_t lxp_hash_title (const char *title, int length)
 {
 	uint32_t hashval = 0;
 	if (length < 0) {

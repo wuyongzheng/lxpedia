@@ -54,14 +54,14 @@ struct lxp_page_entry {
 	uint32_t block_offset;
 } PACK_STRUCT ;
 
-char *mystrncpy (char *dest, const char *src, size_t n);
+void mystrncpy (char *dest, const char *src, size_t n);
 struct mcs_struct *mcs_create (int initsize);
 void mcs_reset (struct mcs_struct *mcs);
 void mcs_expand (struct mcs_struct *mcs, int newsize);
 void mcs_cat (struct mcs_struct *dst, char *src, int src_len);
 void mcs_free (struct mcs_struct *mcs);
 
-uint32_t lxp_hash_title (char *title, int length);
+uint32_t lxp_hash_title (const char *title, int length);
 
 extern const unsigned short cmap_toupper[65536];
 extern const unsigned short cmap_tolower[65536];

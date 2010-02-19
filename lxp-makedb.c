@@ -404,7 +404,7 @@ static void gen_index (void)
 		}
 		printf("%.3fMB text is compressed into %.3fMB in %d blocks in %d files\n",
 				plain_size / 1048576.0, comp_size / 1048576.0,
-				block_num, blocks[block_num-1].file_num);
+				block_num, blocks[block_num-1].file_num + 1);
 	}
 
 	/* sort pages by hashval */
